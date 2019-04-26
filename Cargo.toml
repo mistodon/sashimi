@@ -1,0 +1,8 @@
+[package]
+name = "pchomp"
+version = "0.1.0"
+authors = ["Claire Harris <wishing.engine@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+failure = "~0.1.5"
