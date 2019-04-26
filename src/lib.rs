@@ -225,3 +225,65 @@ impl<'a> Parser<'a> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    macro_rules! testcase {
+        ($name:ident, $source:literal, $fn:ident ( $arg:expr ), $result:expr, $remainder:literal) => {
+            #[test]
+            fn $name() {
+                let parser = &mut Parser::new($source);
+                let result = parser.$fn($arg);
+                let remainder = parser.source()[parser.cursor()..].as_bytes();
+                assert_eq!(result, $result);
+                assert_eq!(remainder, $remainder.as_bytes());
+            }
+        }
+    }
+
+    macro_rules! testcase_ok {
+        ($name:ident, $source:literal, $fn:ident ( $arg:expr ), $result:expr, $remainder:literal) => {
+            #[test]
+            fn $name() {
+                let parser = &mut Parser::new($source);
+                let result = parser.$fn($arg).unwrap();
+                let remainder = parser.source()[parser.cursor()..].as_bytes();
+                assert_eq!(result, $result);
+                assert_eq!(remainder, $remainder.as_bytes());
+            }
+        }
+    }
+
+    macro_rules! testcase_err {
+        ($name:ident, $source:literal, $fn:ident ( $arg:expr ), $remainder:literal) => {
+            #[test]
+            fn $name() {
+                let parser = &mut Parser::new($source);
+                let result = parser.$fn($arg).iter().next().is_some();
+                let remainder = parser.source()[parser.cursor()..].as_bytes();
+                assert!(!result);
+                assert_eq!(remainder, $remainder.as_bytes());
+            }
+        }
+    }
+
+    testcase!(check_a, "a", check(b"a"), true, "a");
+    testcase!(check_b, "b", check(b"b"), true, "b");
+    testcase!(check_word, "word", check(b"word"), true, "word");
+    testcase!(check_fail, "b", check(b"a"), false, "b");
+    testcase!(check_eof, "", check(b"a"), false, "");
+    testcase!(skip_a, "a", skip(b"a"), true, "");
+    testcase!(skip_b, "b", skip(b"b"), true, "");
+    testcase!(skip_word, "word", skip(b"word"), true, "");
+    testcase!(skip_trims, "word  \nend", skip(b"word"), true, "end");
+    testcase!(skip_fail, "b", skip(b"a"), false, "b");
+    testcase!(skip_eof, "", skip(b"a"), false, "");
+    testcase_ok!(expect_a, "a", expect(b"a"), (), "");
+    testcase_ok!(expect_b, "b", expect(b"b"), (), "");
+    testcase_ok!(expect_word, "word", expect(b"word"), (), "");
+    testcase_ok!(expect_trims, "word  \nend", expect(b"word"), (), "end");
+    testcase_err!(expect_fail, "b", expect(b"a"), "b");
+    testcase_err!(expect_eof, "", expect(b"a"), "");
+}
