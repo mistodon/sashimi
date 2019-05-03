@@ -1,32 +1,22 @@
-use std::{
-    fmt::{self, Display, Formatter},
-};
-
-use failure::{self, Fail};
+use failure::Fail;
 
 #[derive(Debug, Fail)]
+#[fail(display = "Error at byte position {}: `{}`", byte, kind)]
 pub struct ParseError {
-    byte: usize,
-    kind: ParseErrorKind,
+    pub byte: usize,
+    pub kind: ParseErrorKind,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Fail)]
 pub enum ParseErrorKind {
+    #[fail(display = "Unexpected end of file")]
     UnexpectedEOF,
+
+    #[fail(display = "Unexpected byte")]
     UnexpectedByte,
+
+    #[fail(display = "Missing closing byte")]
     NoClosingByte,
-}
-
-impl Display for ParseError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
-}
-
-impl Display for ParseErrorKind {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, "{:?}", self)
-    }
 }
 
 pub struct Parser<'a> {
