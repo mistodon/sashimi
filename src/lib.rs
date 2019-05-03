@@ -28,9 +28,7 @@ impl<'a> Parser<'a> {
     }
 
     fn is_ident_start(&self, ch: u8) -> bool {
-        ch == b'_'
-            || (b'a' <= ch && ch <= b'z')
-            || (b'A' <= ch && ch <= b'Z')
+        ch == b'_' || (b'a' <= ch && ch <= b'z') || (b'A' <= ch && ch <= b'Z')
     }
 
     #[inline(always)]
@@ -78,7 +76,7 @@ impl<'a> Parser<'a> {
         F: Fn(u8) -> bool,
     {
         let mut cursor = self.cursor;
-        while f(self.source[cursor]) && cursor < self.source.len() {
+        while cursor < self.source.len() && f(self.source[cursor]) {
             cursor += 1;
         }
         let result = &self.source[self.cursor..cursor];
@@ -156,15 +154,16 @@ impl<'a> Parser<'a> {
         // TODO: Duplication
         if self.finished() {
             return Err(failure::err_msg(format!(
-                "Expected `{}` but reached the end of the file.",
-                "(TODO: Show correct expectation)"
+                "Expected {} but reached the end of the file.",
+                "identifier"
             )));
         }
 
         self.skip_ident().ok_or(failure::err_msg(format!(
-                "Expected `{}` but saw `{}`",
-                "(TODO: Show correct expectation)", "(TODO: Show what was found instead)",
-            )))
+            "Expected {} but saw `{}`",
+            "identifier",
+            &self.source()[self.cursor()..],
+        )))
     }
 
     #[inline(always)]
@@ -182,16 +181,13 @@ impl<'a> Parser<'a> {
         F: Fn(&mut Self) -> bool,
     {
         if self.finished() {
-            return Err(failure::err_msg(format!(
-                "Expected `{}` but reached the end of the file.",
-                "(TODO: Show correct expectation)"
-            )));
+            return Err(failure::err_msg("Unexpected end of file"));
         }
 
         if !f(self) {
             Err(failure::err_msg(format!(
-                "Expected `{}` but saw `{}`",
-                "(TODO: Show correct expectation)", "(TODO: Show what was found instead)",
+                "Unexpected tokens - saw: `{}`",
+                &self.source()[self.cursor()..],
             )))
         } else {
             Ok(())
@@ -224,6 +220,16 @@ impl<'a> Parser<'a> {
             _ => Err(failure::err_msg("Failed to find closing character")),
         }
     }
+
+    pub fn scan_to(&mut self, byte: u8) -> &'a [u8] {
+        let mut cursor = self.cursor;
+        while cursor < self.source.len() && self.source[cursor] != byte {
+            cursor += 1;
+        }
+        let result = &self.source[self.cursor..cursor];
+        self.cursor = cursor;
+        result
+    }
 }
 
 #[cfg(test)]
@@ -231,11 +237,11 @@ mod tests {
     use super::*;
 
     macro_rules! testcase {
-        ($name:ident, $source:literal, $fn:ident ( $arg:expr ), $result:expr, $remainder:literal) => {
+        ($name:ident, $source:literal, $fn:ident ( $($arg:expr),* ), $result:expr, $remainder:literal) => {
             #[test]
             fn $name() {
                 let parser = &mut Parser::new($source);
-                let result = parser.$fn($arg);
+                let result = parser.$fn($($arg),*);
                 let remainder = parser.source()[parser.cursor()..].as_bytes();
                 assert_eq!(result, $result);
                 assert_eq!(remainder, $remainder.as_bytes());
@@ -244,11 +250,11 @@ mod tests {
     }
 
     macro_rules! testcase_ok {
-        ($name:ident, $source:literal, $fn:ident ( $arg:expr ), $result:expr, $remainder:literal) => {
+        ($name:ident, $source:literal, $fn:ident ( $($arg:expr),* ), $result:expr, $remainder:literal) => {
             #[test]
             fn $name() {
                 let parser = &mut Parser::new($source);
-                let result = parser.$fn($arg).unwrap();
+                let result = parser.$fn($($arg),*).unwrap();
                 let remainder = parser.source()[parser.cursor()..].as_bytes();
                 assert_eq!(result, $result);
                 assert_eq!(remainder, $remainder.as_bytes());
@@ -257,11 +263,11 @@ mod tests {
     }
 
     macro_rules! testcase_err {
-        ($name:ident, $source:literal, $fn:ident ( $arg:expr ), $remainder:literal) => {
+        ($name:ident, $source:literal, $fn:ident ( $($arg:expr),* ), $remainder:literal) => {
             #[test]
             fn $name() {
                 let parser = &mut Parser::new($source);
-                let result = parser.$fn($arg).iter().next().is_some();
+                let result = parser.$fn($($arg),*).iter().next().is_some();
                 let remainder = parser.source()[parser.cursor()..].as_bytes();
                 assert!(!result);
                 assert_eq!(remainder, $remainder.as_bytes());
@@ -286,4 +292,13 @@ mod tests {
     testcase_ok!(expect_trims, "word  \nend", expect(b"word"), (), "end");
     testcase_err!(expect_fail, "b", expect(b"a"), "b");
     testcase_err!(expect_eof, "", expect(b"a"), "");
+
+    testcase!(
+        check_ident,
+        "abc",
+        check_ident(),
+        Some(b"abc".as_ref()),
+        "abc"
+    );
+    testcase!(check_ident_eof, "", check_ident(), None, "");
 }
