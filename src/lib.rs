@@ -1,4 +1,33 @@
-use failure::{self, Error};
+use std::{
+    fmt::{self, Display, Formatter},
+};
+
+use failure::{self, Fail};
+
+#[derive(Debug, Fail)]
+pub struct ParseError {
+    byte: usize,
+    kind: ParseErrorKind,
+}
+
+#[derive(Debug)]
+pub enum ParseErrorKind {
+    UnexpectedEOF,
+    UnexpectedByte,
+    NoClosingByte,
+}
+
+impl Display for ParseError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
+
+impl Display for ParseErrorKind {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{:?}", self)
+    }
+}
 
 pub struct Parser<'a> {
     source: &'a [u8],
@@ -145,63 +174,53 @@ impl<'a> Parser<'a> {
     }
 
     #[inline(always)]
-    pub fn expect(&mut self, next: &[u8]) -> Result<(), Error> {
+    pub fn expect(&mut self, next: &[u8]) -> Result<(), ParseError> {
         self.expect_with_fn(|parser| parser.skip(next))
     }
 
     #[inline(always)]
-    pub fn expect_ident(&mut self) -> Result<&'a [u8], Error> {
+    pub fn expect_ident(&mut self) -> Result<&'a [u8], ParseError> {
         // TODO: Duplication
         if self.finished() {
-            return Err(failure::err_msg(format!(
-                "Expected {} but reached the end of the file.",
-                "identifier"
-            )));
+            return Err(ParseError { byte: self.cursor, kind: ParseErrorKind::UnexpectedEOF });
         }
 
-        self.skip_ident().ok_or(failure::err_msg(format!(
-            "Expected {} but saw `{}`",
-            "identifier",
-            &self.source()[self.cursor()..],
-        )))
+        self.skip_ident().ok_or_else(|| ParseError { byte: self.cursor, kind: ParseErrorKind::UnexpectedByte })
     }
 
     #[inline(always)]
-    pub fn expect_only(&mut self, next: &[u8]) -> Result<(), Error> {
+    pub fn expect_only(&mut self, next: &[u8]) -> Result<(), ParseError> {
         self.expect_with_fn(|parser| parser.skip_only(next))
     }
 
     #[inline(always)]
-    pub fn expect_keyword(&mut self, keyword: &[u8]) -> Result<(), Error> {
+    pub fn expect_keyword(&mut self, keyword: &[u8]) -> Result<(), ParseError> {
         self.expect_with_fn(|parser| parser.skip_keyword(keyword))
     }
 
-    fn expect_with_fn<F>(&mut self, f: F) -> Result<(), Error>
+    fn expect_with_fn<F>(&mut self, f: F) -> Result<(), ParseError>
     where
         F: Fn(&mut Self) -> bool,
     {
         if self.finished() {
-            return Err(failure::err_msg("Unexpected end of file"));
+            return Err(ParseError { byte: self.cursor, kind: ParseErrorKind::UnexpectedEOF });
         }
 
         if !f(self) {
-            Err(failure::err_msg(format!(
-                "Unexpected tokens - saw: `{}`",
-                &self.source()[self.cursor()..],
-            )))
+            Err(ParseError { byte: self.cursor, kind: ParseErrorKind::UnexpectedByte })
         } else {
             Ok(())
         }
     }
 
-    pub fn skip_around(&mut self, opener: u8, closer: u8) -> Result<(), Error> {
+    pub fn skip_around(&mut self, opener: u8, closer: u8) -> Result<(), ParseError> {
         self.expect(&[opener])?;
         self.skip_inside(opener, closer)?;
         self.expect(&[closer])?;
         Ok(())
     }
 
-    pub fn skip_inside(&mut self, opener: u8, closer: u8) -> Result<(), Error> {
+    pub fn skip_inside(&mut self, opener: u8, closer: u8) -> Result<(), ParseError> {
         let mut nesting = 1;
         loop {
             if self.check(&[opener]) {
@@ -217,7 +236,7 @@ impl<'a> Parser<'a> {
 
         match nesting {
             0 => Ok(()),
-            _ => Err(failure::err_msg("Failed to find closing character")),
+            _ => Err(ParseError { byte: self.cursor, kind: ParseErrorKind::NoClosingByte }),
         }
     }
 
