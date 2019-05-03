@@ -172,10 +172,16 @@ impl<'a> Parser<'a> {
     pub fn expect_ident(&mut self) -> Result<&'a [u8], ParseError> {
         // TODO: Duplication
         if self.finished() {
-            return Err(ParseError { byte: self.cursor, kind: ParseErrorKind::UnexpectedEOF });
+            return Err(ParseError {
+                byte: self.cursor,
+                kind: ParseErrorKind::UnexpectedEOF,
+            });
         }
 
-        self.skip_ident().ok_or_else(|| ParseError { byte: self.cursor, kind: ParseErrorKind::UnexpectedByte })
+        self.skip_ident().ok_or_else(|| ParseError {
+            byte: self.cursor,
+            kind: ParseErrorKind::UnexpectedByte,
+        })
     }
 
     #[inline(always)]
@@ -193,11 +199,17 @@ impl<'a> Parser<'a> {
         F: Fn(&mut Self) -> bool,
     {
         if self.finished() {
-            return Err(ParseError { byte: self.cursor, kind: ParseErrorKind::UnexpectedEOF });
+            return Err(ParseError {
+                byte: self.cursor,
+                kind: ParseErrorKind::UnexpectedEOF,
+            });
         }
 
         if !f(self) {
-            Err(ParseError { byte: self.cursor, kind: ParseErrorKind::UnexpectedByte })
+            Err(ParseError {
+                byte: self.cursor,
+                kind: ParseErrorKind::UnexpectedByte,
+            })
         } else {
             Ok(())
         }
@@ -226,7 +238,10 @@ impl<'a> Parser<'a> {
 
         match nesting {
             0 => Ok(()),
-            _ => Err(ParseError { byte: self.cursor, kind: ParseErrorKind::NoClosingByte }),
+            _ => Err(ParseError {
+                byte: self.cursor,
+                kind: ParseErrorKind::NoClosingByte,
+            }),
         }
     }
 
