@@ -67,11 +67,18 @@ impl<'a> Parser<'a> {
 
     pub fn skip_whitespace(&mut self) {
         let mut in_comment = false;
+        let mut multiline_comment = false;
         loop {
             // TODO: Multi-line comments
             if self.skip_only(b"//") {
                 in_comment = true;
-            } else if self.skip_only(b"\n") {
+            } else if self.skip_only(b"/*") {
+                in_comment = true;
+                multiline_comment = true;
+            } else if self.skip_only(b"*/") {
+                in_comment = false;
+                multiline_comment = false;
+            } else if self.skip_only(b"\n") && !multiline_comment {
                 in_comment = false;
             } else {
                 if self.finished() || !(in_comment || self.is_whitespace(self.source[self.cursor]))
@@ -222,18 +229,23 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    // TODO: Remove ugly string hack
     pub fn skip_inside(&mut self, opener: u8, closer: u8) -> Result<(), ParseError> {
         let mut nesting = 1;
+        let mut ignoring = false;
         loop {
-            if self.check(&[opener]) {
+            if self.check(b"\"") {
+                ignoring = !ignoring;
+            } else if !ignoring && self.check(&[opener]) {
                 nesting += 1;
-            } else if self.check(&[closer]) {
+            } else if !ignoring && self.check(&[closer]) {
                 nesting -= 1;
             }
             if nesting == 0 || self.finished() {
                 break;
             }
             self.cursor += 1;
+            self.skip_whitespace();
         }
 
         match nesting {
