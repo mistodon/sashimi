@@ -5,4 +5,4 @@ authors = ["Claire Harris <wishing.engine@gmail.com>"]
 edition = "2018"
 
 [dependencies]
-failure = "~0.1.5"
+thiserror = "1.0.24"

@@ -1,21 +1,21 @@
-use failure::Fail;
+use thiserror::Error;
 
-#[derive(Debug, Fail)]
-#[fail(display = "Error at byte position {}: `{}`", byte, kind)]
+#[derive(Debug, Error)]
+#[error("Error at byte position {byte}: `{kind}`")]
 pub struct ParseError {
     pub byte: usize,
     pub kind: ParseErrorKind,
 }
 
-#[derive(Debug, Fail)]
+#[derive(Debug, Error)]
 pub enum ParseErrorKind {
-    #[fail(display = "Unexpected end of file")]
+    #[error("Unexpected end of file")]
     UnexpectedEOF,
 
-    #[fail(display = "Unexpected byte")]
+    #[error("Unexpected byte")]
     UnexpectedByte,
 
-    #[fail(display = "Missing closing byte")]
+    #[error("Missing closing byte")]
     NoClosingByte,
 }
 
@@ -33,21 +33,18 @@ impl<'a> Parser<'a> {
     }
 
     fn is_whitespace(&self, ch: u8) -> bool {
-        match ch {
-            b' ' | b'\t' | b'\r' => true,
-            _ => false,
-        }
+        matches!(ch, b' ' | b'\t' | b'\r')
     }
 
     fn is_ident_char(&self, ch: u8) -> bool {
         ch == b'_'
-            || (b'a' <= ch && ch <= b'z')
-            || (b'A' <= ch && ch <= b'Z')
-            || (b'0' <= ch && ch <= b'9')
+            || (b'a'..=b'z').contains(&ch)
+            || (b'A'..=b'Z').contains(&ch)
+            || (b'0'..=b'9').contains(&ch)
     }
 
     fn is_ident_start(&self, ch: u8) -> bool {
-        ch == b'_' || (b'a' <= ch && ch <= b'z') || (b'A' <= ch && ch <= b'Z')
+        ch == b'_' || (b'a'..=b'z').contains(&ch) || (b'A'..=b'Z').contains(&ch)
     }
 
     #[inline(always)]
@@ -144,6 +141,17 @@ impl<'a> Parser<'a> {
         result
     }
 
+    pub fn skip_matching_only<F>(&mut self, f: F) -> Option<&'a [u8]>
+    where
+        F: Fn(u8) -> bool,
+    {
+        let result = self.check_matching(f);
+        if let Some(result) = result {
+            self.cursor += result.len();
+        }
+        result
+    }
+
     pub fn skip_ident(&mut self) -> Option<&'a [u8]> {
         let result = self.check_ident();
         if let Some(result) = result {
@@ -170,6 +178,14 @@ impl<'a> Parser<'a> {
         success
     }
 
+    pub fn skip_keyword_only(&mut self, keyword: &[u8]) -> bool {
+        let success = self.check_keyword(keyword);
+        if success {
+            self.cursor += keyword.len();
+        }
+        success
+    }
+
     #[inline(always)]
     pub fn expect(&mut self, next: &[u8]) -> Result<(), ParseError> {
         self.expect_with_fn(|parser| parser.skip(next))
@@ -185,7 +201,7 @@ impl<'a> Parser<'a> {
             });
         }
 
-        self.skip_ident().ok_or_else(|| ParseError {
+        self.skip_ident().ok_or(ParseError {
             byte: self.cursor,
             kind: ParseErrorKind::UnexpectedByte,
         })
