@@ -19,6 +19,7 @@ pub enum ParseErrorKind {
     NoClosingByte,
 }
 
+#[derive(Clone)]
 pub struct Parser<'a> {
     source: &'a [u8],
     cursor: usize,
@@ -50,6 +51,10 @@ impl<'a> Parser<'a> {
     #[inline(always)]
     pub fn source(&self) -> &'a str {
         unsafe { std::str::from_utf8_unchecked(self.source) }
+    }
+
+    pub fn bytes(&self) -> &'a [u8] {
+        self.source
     }
 
     #[inline(always)]
@@ -238,17 +243,18 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn skip_around(&mut self, opener: u8, closer: u8) -> Result<(), ParseError> {
+    pub fn skip_around(&mut self, opener: u8, closer: u8) -> Result<&[u8], ParseError> {
         self.expect(&[opener])?;
-        self.skip_inside(opener, closer)?;
+        let result = self.skip_inside(opener, closer)?;
         self.expect(&[closer])?;
-        Ok(())
+        Ok(result)
     }
 
     // TODO: Remove ugly string hack
-    pub fn skip_inside(&mut self, opener: u8, closer: u8) -> Result<(), ParseError> {
+    pub fn skip_inside(&mut self, opener: u8, closer: u8) -> Result<&'a [u8], ParseError> {
         let mut nesting = 1;
         let mut ignoring = false;
+        let start = self.cursor();
         loop {
             if self.check(b"\"") {
                 ignoring = !ignoring;
@@ -265,7 +271,7 @@ impl<'a> Parser<'a> {
         }
 
         match nesting {
-            0 => Ok(()),
+            0 => Ok(&self.source[start .. self.cursor()]),
             _ => Err(ParseError {
                 byte: self.cursor,
                 kind: ParseErrorKind::NoClosingByte,
