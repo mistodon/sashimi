@@ -1,5 +1,7 @@
 use thiserror::Error;
 
+pub mod replacement;
+
 #[derive(Debug, Error)]
 #[error("Error at byte position {byte}: `{kind}`")]
 pub struct ParseError {
