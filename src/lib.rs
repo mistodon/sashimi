@@ -458,7 +458,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
     ///
     /// # Examples
     /// ```rust
-    /// use sushi::Parser;
+    /// use sashimi::Parser;
     ///
     /// let source = "nested { 'ignores } quotes' } }<- end";
     /// let mut parser: Parser = Parser::new(source);

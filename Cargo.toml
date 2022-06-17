@@ -1,12 +1,12 @@
 [package]
-name = "sushi"
+name = "sashimi"
 version = "0.1.0"
 authors = ["Vi <violet@hey.com>"]
 edition = "2021"
 description = "Simple, straightforward, zero-copy, general-purpose parsing library. Opinionated by default, with customizable rules."
 
-homepage = "https://github.com/mistodon/sushi"
-repository = "https://github.com/mistodon/sushi"
+homepage = "https://github.com/mistodon/sashimi"
+repository = "https://github.com/mistodon/sashimi"
 readme = "README.md"
 keywords = ["parsing", "parser", "zero-copy"]
 categories = ["config", "parsing"]

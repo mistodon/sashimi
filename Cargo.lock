@@ -21,7 +21,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "sushi"
+name = "sashimi"
 version = "0.1.0"
 dependencies = [
  "thiserror",
