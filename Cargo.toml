@@ -1,8 +1,16 @@
 [package]
-name = "pchomp"
+name = "sushi"
 version = "0.1.0"
 authors = ["Vi <violet@hey.com>"]
 edition = "2021"
+description = "Simple, straightforward, zero-copy, general-purpose parsing library. Opinionated by default, with customizable rules."
+
+homepage = "https://github.com/mistodon/sushi"
+repository = "https://github.com/mistodon/sushi"
+readme = "README.md"
+keywords = ["parsing", "parser", "zero-copy"]
+categories = ["config", "parsing"]
+license = "CC0-1.0"
 
 [dependencies]
 thiserror = "1.0.31"

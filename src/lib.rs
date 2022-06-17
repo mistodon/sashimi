@@ -29,42 +29,64 @@ type Error = ParseError;
 type Kind = ParseErrorKind;
 type Result<T> = std::result::Result<T, Error>;
 
+/// A trait that can be implemented to customize a `Parser`.
 pub trait ParserRules: Clone {
+    /// The sequence of bytes that prefixes a single-line comment.
     const SINGLE_LINE_COMMENT: Option<&'static [u8]> = Some(b"//");
 
+    /// A pair of opening and closing multi-line comment tokens.
     const MULTI_LINE_COMMENT: Option<(&'static [u8], &'static [u8])> = Some((b"/*", b"*/"));
 
+    /// A list of paired parentheses which can be nested.
     const NESTABLE_PARENS: &'static [(u8, u8)] = &[(b'{', b'}'), (b'[', b']'), (b'(', b')')];
 
+    /// A list of paired parentheses which cannot be nested - for example, quotes.
     const NON_NESTABLE_PARENS: &'static [(u8, u8)] = &[(b'"', b'"'), (b'\'', b'\'')];
 
+    /// If `true`, whitespace is skipped after every parsing function.
     fn always_skip_whitespace() -> bool {
         true
     }
 
+    /// Test whether a byte is whitespace.
     fn is_whitespace_byte(ch: u8) -> bool {
-        matches!(ch, b' ' | b'\n' | b'\r')
+        matches!(ch, b' ' | b'\n' | b'\r' | b'\t')
     }
 
+    /// Test whether a byte can be the beginning of an identifier.
+    fn is_ident_start_byte(ch: u8) -> bool {
+        ch == b'_' || (b'a'..=b'z').contains(&ch) || (b'A'..=b'Z').contains(&ch)
+    }
+
+    /// Test whether a byte can be within an identifies.
     fn is_ident_byte(ch: u8) -> bool {
         ch == b'_'
             || (b'a'..=b'z').contains(&ch)
             || (b'A'..=b'Z').contains(&ch)
             || (b'0'..=b'9').contains(&ch)
     }
-
-    fn is_ident_start_byte(ch: u8) -> bool {
-        ch == b'_' || (b'a'..=b'z').contains(&ch) || (b'A'..=b'Z').contains(&ch)
-    }
 }
 
+/// The default `Parser` rules - including Rust-style comments and identifiers.
 #[derive(Clone, Copy)]
 pub struct DefaultRules;
 
+/// Like `DefaultRules`, except newlines are not considered whitespace and will not be skipped
+/// over.
+#[derive(Clone, Copy)]
+pub struct LineBasedRules;
+
+/// Like `DefaultRules`, except whitespace is never skipped automatically.
 #[derive(Clone, Copy)]
 pub struct ExactRules;
 
 impl ParserRules for DefaultRules {}
+
+impl ParserRules for LineBasedRules {
+    fn is_whitespace_byte(ch: u8) -> bool {
+        matches!(ch, b' ' | b'\r' | b'\t')
+    }
+}
 
 impl ParserRules for ExactRules {
     fn always_skip_whitespace() -> bool {
@@ -75,6 +97,10 @@ impl ParserRules for ExactRules {
 pub type DefaultParser<'a> = Parser<'a, DefaultRules>;
 pub type ExactParser<'a> = Parser<'a, ExactRules>;
 
+/// A struct for parsing a given input.
+///
+/// The generic type parameter `R` determines the rules for parsing. The `Parser` also stores a
+/// view into the source to be parsed, and its various methods return slices of that same source.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Parser<'a, R: ParserRules = DefaultRules> {
     source: &'a [u8],
@@ -83,10 +109,12 @@ pub struct Parser<'a, R: ParserRules = DefaultRules> {
 }
 
 impl<'a, R: ParserRules> Parser<'a, R> {
+    /// Start parsing a string.
     pub fn new(source: &'a str) -> Self {
         Self::new_from_bytes(source.as_bytes())
     }
 
+    /// Start parsing some bytes.
     pub fn new_from_bytes(source: &'a [u8]) -> Self {
         Parser {
             source: source,
@@ -95,6 +123,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         }
     }
 
+    /// Clone the parser, but with a different set of rules.
     pub fn clone_with_rules<N: ParserRules>(&self) -> Parser<'a, N> {
         Parser {
             source: self.source,
@@ -103,39 +132,50 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         }
     }
 
+    /// Return an immutable reference to this parser, but with a different set of rules.
     pub fn with_rules<N: ParserRules>(&self) -> &Parser<'a, N> {
         unsafe { std::mem::transmute(self) }
     }
 
+    /// Return a mutable reference to this parser, but with a different set of rules.
     pub fn with_rules_mut<N: ParserRules>(&mut self) -> &mut Parser<'a, N> {
         unsafe { std::mem::transmute(self) }
     }
 
+    /// Return a reference to the underlying source.
+    ///
+    /// # Panics
+    /// Panics if the source is not valid UTF-8.
     #[inline(always)]
     pub fn source(&self) -> &'a str {
         std::str::from_utf8(self.source).expect("Parser `source` must be valid UTF-8")
     }
 
+    /// Return a reference to the underlying source bytes.
     #[inline(always)]
     pub fn bytes(&self) -> &'a [u8] {
         self.source
     }
 
+    /// Returns the length of the source.
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.bytes().len()
     }
 
+    /// Returns the number of bytes that have already been parsed.
     #[inline(always)]
     pub fn cursor(&self) -> usize {
         self.cursor
     }
 
+    /// Returns whether there are any more bytes left or not.
     #[inline(always)]
     pub fn finished(&self) -> bool {
         self.cursor() == self.bytes().len()
     }
 
+    /// Returns an error if the parser is not finished.
     pub fn expect_finished(&self) -> Result<()> {
         if !self.finished() {
             return Err(Error {
@@ -147,6 +187,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         Ok(())
     }
 
+    /// Returns an error if the parser is finished.
     pub fn expect_not_finished(&self) -> Result<()> {
         if self.finished() {
             return Err(Error {
@@ -158,6 +199,10 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         Ok(())
     }
 
+    /// Move the cursor forward `n` bytes, and possibly skips whitespace depending on rules.
+    ///
+    /// # Panics
+    /// Panics if the cursor passes the end of the source.
     pub fn skip_n_unchecked(&mut self, n: usize) -> &'a [u8] {
         let start = self.cursor();
         self.cursor += n;
@@ -166,6 +211,11 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         result
     }
 
+    /// Move the cursor forward `n` bytes, and possibly skips whitespace depending on rules.
+    ///
+    /// # Errors
+    /// Returns an error if the cursor passes the end of the source. Does not modify the cursor in
+    /// this case.
     pub fn skip_n(&mut self, n: usize) -> Result<&'a [u8]> {
         match self.cursor() + n <= self.len() {
             true => Ok(self.skip_n_unchecked(n)),
@@ -176,6 +226,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         }
     }
 
+    /// Returns all successive whitespace (and comments), if any, without moving the cursor.
     pub fn check_whitespace(&mut self) -> Option<&'a [u8]> {
         let start = self.cursor();
         let mut cur = start;
@@ -232,6 +283,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         }
     }
 
+    /// Returns all successive whitespace (and comments), if any, moving the cursor past it.
     pub fn skip_whitespace(&mut self) -> Option<&'a [u8]> {
         self.check_whitespace()
             .map(|whitespace| self.skip_n_unchecked(whitespace.len()))
@@ -258,15 +310,22 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         }
     }
 
+    /// Returns the expected sequence of bytes, if present, without moving the cursor.
     pub fn check(&self, expected: &[u8]) -> Option<&'a [u8]> {
         self.check_from(self.cursor(), expected)
     }
 
+    /// Returns the expected sequence of bytes, if present, moving the cursor past it.
     pub fn skip(&mut self, expected: &[u8]) -> Option<&'a [u8]> {
         self.check(expected)
             .map(|found| self.skip_n_unchecked(found.len()))
     }
 
+    /// Returns the expected sequence of bytes, if present, moving the cursor past it.
+    ///
+    /// # Errors
+    /// Returns an error if the bytes are not found. Does not move the cursor in
+    /// this case.
     pub fn expect(&mut self, expected: &[u8]) -> Result<&'a [u8]> {
         self.expect_not_finished()?;
 
@@ -296,6 +355,8 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         &self.bytes()[pos..cur]
     }
 
+    /// Returns the longest sequence of bytes that match the given predicate without moving the
+    /// cursor.
     pub fn check_matching<F>(&self, f: F) -> &'a [u8]
     where
         F: Fn(u8) -> bool,
@@ -303,6 +364,8 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         self.check_matching_from(self.cursor(), f)
     }
 
+    /// Returns the longest sequence of bytes that match the given predicate, moving the
+    /// cursor past them.
     pub fn skip_matching<F>(&mut self, f: F) -> &'a [u8]
     where
         F: Fn(u8) -> bool,
@@ -312,6 +375,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         result
     }
 
+    /// Returns the identifier at the cursor, if one exists, without moving the cursor.
     pub fn check_ident(&self) -> Option<&'a [u8]> {
         let candidate = self.check_matching(|ch| R::is_ident_byte(ch));
         match candidate.len() > 0 && R::is_ident_start_byte(candidate[0]) {
@@ -320,11 +384,17 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         }
     }
 
+    /// Returns the identifier at the cursor, if one exists, moving the cursor past it.
     pub fn skip_ident(&mut self) -> Option<&'a [u8]> {
         self.check_ident()
             .map(|ident| self.skip_n_unchecked(ident.len()))
     }
 
+    /// Returns the identifier at the cursor, if one exists, moving the cursor past it.
+    ///
+    /// # Errors
+    /// Returns an error if there is no valid identifier at the cursor. Does not move the cursor in
+    /// this case.
     pub fn expect_ident(&mut self) -> Result<&'a [u8]> {
         self.expect_not_finished()?;
 
@@ -344,6 +414,9 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         String::from_utf8_lossy(byte_range).into_owned()
     }
 
+    /// Returns the keyword at the cursor, if one exists, without moving the cursor.
+    ///
+    /// A keyword can be any sequence of bytes not followed by an identifier character.
     pub fn check_keyword(&mut self, keyword: &[u8]) -> Option<&'a [u8]> {
         self.check(keyword).filter(|keyword| {
             let end = self.cursor() + keyword.len();
@@ -351,11 +424,21 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         })
     }
 
+    /// Returns the keyword at the cursor, if one exists, moving the cursor past it.
+    ///
+    /// A keyword can be any sequence of bytes not followed by an identifier character.
     pub fn skip_keyword(&mut self, keyword: &[u8]) -> Option<&'a [u8]> {
         self.check_keyword(keyword)
             .map(|keyword| self.skip_n_unchecked(keyword.len()))
     }
 
+    /// Returns the keyword at the cursor, if one exists, moving the cursor past it.
+    ///
+    /// A keyword can be any sequence of bytes not followed by an identifier character.
+    ///
+    /// # Errors
+    /// Returns an error if there is no keyword at the cursor. Does not move the cursor in
+    /// this case.
     pub fn expect_keyword(&mut self, keyword: &[u8]) -> Result<&'a [u8]> {
         self.expect_not_finished()?;
 
@@ -369,11 +452,30 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         })
     }
 
-    pub fn skip_inside(&mut self, opener: u8) -> Result<&'a [u8]> {
+    /// Skip all tokens within a pair of matching parentheses, given by the opening byte.
+    ///
+    /// This method assumes that the cursor is _beyond_ the opening byte.
+    ///
+    /// # Examples
+    /// ```rust
+    /// use sushi::Parser;
+    ///
+    /// let source = "nested { 'ignores } quotes' } }<- end";
+    /// let mut parser: Parser = Parser::new(source);
+    ///
+    /// assert_eq!(
+    ///     parser.skip_inside(b'{').unwrap(),
+    ///     b"nested { 'ignores } quotes' } ",
+    /// );
+    /// ```
+    ///
+    /// # Errors
+    /// Returns an error if no matching bracket is found by the end of the input.
+    pub fn skip_inside(&mut self, first_opener: u8) -> Result<&'a [u8]> {
         let start = self.cursor();
         let mut parser = self.clone();
 
-        let mut open_stack = vec![opener];
+        let mut open_stack = vec![first_opener];
 
         while !parser.finished() && !open_stack.is_empty() {
             let byte = parser.bytes()[parser.cursor()];
@@ -392,6 +494,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
                 (_, Some(o)) => {
                     open_stack.push(o.0);
                 }
+                _ if byte == first_opener => open_stack.push(byte),
                 _ => (),
             }
 
@@ -411,6 +514,8 @@ impl<'a, R: ParserRules> Parser<'a, R> {
         }
     }
 
+    /// See `Parser::skip_inside`. The same, but consumes the opening and closing parentheses as
+    /// well.
     pub fn skip_around(&mut self, opener: u8) -> Result<&'a [u8]> {
         let start = self.cursor();
         let closer = R::NESTABLE_PARENS
@@ -509,7 +614,13 @@ mod tests {
     testcase_ok!(expect_trims, "word  \nend", expect(b"word"), "word", "end");
 
     testcase_ok!(expect_ident_ok, "_var123", expect_ident(), "_var123", "");
-    testcase_err!(expect_ident_err, "123var_", expect_ident(), "123var_", "Error at byte position 0: Expected identifier but got `123var_` instead");
+    testcase_err!(
+        expect_ident_err,
+        "123var_",
+        expect_ident(),
+        "123var_",
+        "Error at byte position 0: Expected identifier but got `123var_` instead"
+    );
 
     testcase_err!(
         expect_fail,
@@ -583,6 +694,13 @@ mod tests {
         skip_inside(b'{'),
         "inside \"}\" ",
         "}"
+    );
+    testcase_ok!(
+        skip_inside_ignore_nested,
+        " one { two { three } } } done",
+        skip_inside(b'{'),
+        " one { two { three } } ",
+        "} done"
     );
     testcase_err!(
         skip_inside_early_end,
