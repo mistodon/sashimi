@@ -1,6 +1,6 @@
 [package]
 name = "sashimi"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Vi <violet@hey.com>"]
 edition = "2021"
 description = "Simple, straightforward, zero-copy, general-purpose parsing library. Opinionated by default, with customizable rules."
