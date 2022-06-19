@@ -38,7 +38,8 @@ pub trait ParserRules: Clone {
     const MULTI_LINE_COMMENT: Option<(&'static [u8], &'static [u8])> = Some((b"/*", b"*/"));
 
     /// A list of paired parentheses which can be nested.
-    const NESTABLE_PARENS: &'static [(u8, u8)] = &[(b'{', b'}'), (b'[', b']'), (b'(', b')'), (b'<', b'>')];
+    const NESTABLE_PARENS: &'static [(u8, u8)] =
+        &[(b'{', b'}'), (b'[', b']'), (b'(', b')'), (b'<', b'>')];
 
     /// A list of paired parentheses which cannot be nested - for example, quotes.
     const NON_NESTABLE_PARENS: &'static [(u8, u8)] = &[(b'"', b'"'), (b'\'', b'\'')];
