@@ -15,6 +15,9 @@ pub enum ParseErrorKind {
     #[error("Expected `{0}` but got `{1}` instead")]
     UnexpectedString(String, String),
 
+    #[error("Expected one of multiple options but got `{0}` instead")]
+    UnexpectedChoice(String),
+
     #[error("Expected identifier but got `{0}` instead")]
     InvalidIdentifier(String),
 
@@ -28,6 +31,8 @@ pub enum ParseErrorKind {
 type Error = ParseError;
 type Kind = ParseErrorKind;
 type Result<T> = std::result::Result<T, Error>;
+
+// TODO: Rules tests
 
 /// A trait that can be implemented to customize a `Parser`.
 pub trait ParserRules: Clone {
@@ -59,7 +64,7 @@ pub trait ParserRules: Clone {
         ch == b'_' || (b'a'..=b'z').contains(&ch) || (b'A'..=b'Z').contains(&ch)
     }
 
-    /// Test whether a byte can be within an identifies.
+    /// Test whether a byte can be within an identifier.
     fn is_ident_byte(ch: u8) -> bool {
         ch == b'_'
             || (b'a'..=b'z').contains(&ch)
@@ -312,12 +317,12 @@ impl<'a, R: ParserRules> Parser<'a, R> {
     }
 
     /// Returns the expected sequence of bytes, if present, without moving the cursor.
-    pub fn check(&self, expected: &[u8]) -> Option<&'a [u8]> {
-        self.check_from(self.cursor(), expected)
+    pub fn check<S: AsRef<[u8]>>(&self, expected: S) -> Option<&'a [u8]> {
+        self.check_from(self.cursor(), expected.as_ref())
     }
 
     /// Returns the expected sequence of bytes, if present, moving the cursor past it.
-    pub fn skip(&mut self, expected: &[u8]) -> Option<&'a [u8]> {
+    pub fn skip<S: AsRef<[u8]>>(&mut self, expected: S) -> Option<&'a [u8]> {
         self.check(expected)
             .map(|found| self.skip_n_unchecked(found.len()))
     }
@@ -327,10 +332,11 @@ impl<'a, R: ParserRules> Parser<'a, R> {
     /// # Errors
     /// Returns an error if the bytes are not found. Does not move the cursor in
     /// this case.
-    pub fn expect(&mut self, expected: &[u8]) -> Result<&'a [u8]> {
+    pub fn expect<S: AsRef<[u8]>>(&mut self, expected: S) -> Result<&'a [u8]> {
         self.expect_not_finished()?;
 
         let start = self.cursor();
+        let expected = expected.as_ref();
         self.skip(expected).ok_or_else(|| {
             let actual = &self.bytes()[start..std::cmp::min(self.len(), start + expected.len())];
             Error {
@@ -418,7 +424,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
     /// Returns the keyword at the cursor, if one exists, without moving the cursor.
     ///
     /// A keyword can be any sequence of bytes not followed by an identifier character.
-    pub fn check_keyword(&mut self, keyword: &[u8]) -> Option<&'a [u8]> {
+    pub fn check_keyword<S: AsRef<[u8]>>(&self, keyword: S) -> Option<&'a [u8]> {
         self.check(keyword).filter(|keyword| {
             let end = self.cursor() + keyword.len();
             end == self.len() || !R::is_ident_byte(self.bytes()[end])
@@ -428,7 +434,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
     /// Returns the keyword at the cursor, if one exists, moving the cursor past it.
     ///
     /// A keyword can be any sequence of bytes not followed by an identifier character.
-    pub fn skip_keyword(&mut self, keyword: &[u8]) -> Option<&'a [u8]> {
+    pub fn skip_keyword<S: AsRef<[u8]>>(&mut self, keyword: S) -> Option<&'a [u8]> {
         self.check_keyword(keyword)
             .map(|keyword| self.skip_n_unchecked(keyword.len()))
     }
@@ -440,16 +446,95 @@ impl<'a, R: ParserRules> Parser<'a, R> {
     /// # Errors
     /// Returns an error if there is no keyword at the cursor. Does not move the cursor in
     /// this case.
-    pub fn expect_keyword(&mut self, keyword: &[u8]) -> Result<&'a [u8]> {
+    pub fn expect_keyword<S: AsRef<[u8]>>(&mut self, keyword: S) -> Result<&'a [u8]> {
         self.expect_not_finished()?;
 
         let start = self.cursor();
+        let keyword = keyword.as_ref();
         self.skip_keyword(keyword).ok_or_else(|| Error {
             byte: start,
             kind: Kind::UnexpectedString(
                 String::from_utf8_lossy(keyword).into_owned(),
                 self.lookahead_for_error_message(start),
             ),
+        })
+    }
+
+    // TODO: docs
+    pub fn check_any<S, I>(&self, any_of: I) -> Option<&'a [u8]>
+    where
+        S: AsRef<[u8]>,
+        I: IntoIterator<Item = S>,
+    {
+        any_of
+            .into_iter()
+            .filter_map(|candidate| self.check(candidate.as_ref()))
+            .next()
+    }
+
+    // TODO: docs
+    pub fn skip_any<S, I>(&mut self, any_of: I) -> Option<&'a [u8]>
+    where
+        S: AsRef<[u8]>,
+        I: IntoIterator<Item = S>,
+    {
+        any_of
+            .into_iter()
+            .filter_map(|candidate| self.skip(candidate.as_ref()))
+            .next()
+    }
+
+    // TODO: docs
+    pub fn expect_any<S, I>(&mut self, any_of: I) -> Result<&'a [u8]>
+    where
+        S: AsRef<[u8]>,
+        I: IntoIterator<Item = S>,
+    {
+        self.expect_not_finished()?;
+
+        let start = self.cursor();
+        self.skip_any(any_of).ok_or_else(|| Error {
+            byte: start,
+            kind: Kind::UnexpectedChoice(self.lookahead_for_error_message(start)),
+        })
+    }
+
+    // TODO: docs
+    pub fn check_any_keyword<S, I>(&self, any_of: I) -> Option<&'a [u8]>
+    where
+        S: AsRef<[u8]>,
+        I: IntoIterator<Item = S>,
+    {
+        any_of
+            .into_iter()
+            .filter_map(|candidate| self.check_keyword(candidate.as_ref()))
+            .next()
+    }
+
+    // TODO: docs
+    pub fn skip_any_keyword<S, I>(&mut self, any_of: I) -> Option<&'a [u8]>
+    where
+        S: AsRef<[u8]>,
+        I: IntoIterator<Item = S>,
+    {
+        any_of
+            .into_iter()
+            .filter_map(|candidate| self.skip_keyword(candidate.as_ref()))
+            .next()
+    }
+
+    // TODO: docs
+    pub fn expect_any_keyword<S, I>(&mut self, any_of: I) -> Result<&'a [u8]>
+    where
+        S: AsRef<[u8]>,
+        I: IntoIterator<Item = S>,
+    {
+        self.expect_not_finished()?;
+
+        let start = self.cursor();
+        self.skip_any_keyword(any_of).ok_or_else(|| Error {
+            byte: start,
+            kind: Kind::UnexpectedChoice(self.lookahead_for_error_message(start)),
         })
     }
 
@@ -589,6 +674,34 @@ mod tests {
     );
     testcase!(check_fail, "a", check(b"b"), None, "a");
     testcase!(check_eof, "", check(b"b"), None, "");
+    testcase!(
+        check_any,
+        "three blah",
+        check_any(["one", "two", "three"]),
+        Some(b"three".as_ref()),
+        "three blah"
+    );
+    testcase!(
+        check_any_fail,
+        "four blah",
+        check_any(["one", "two", "three"]),
+        None,
+        "four blah"
+    );
+    testcase!(
+        check_any_keyword,
+        "def blah",
+        check_any_keyword(["class", "def"]),
+        Some(b"def".as_ref()),
+        "def blah"
+    );
+    testcase!(
+        check_any_keyword_fail,
+        "defblah",
+        check_any_keyword(["class", "def"]),
+        None,
+        "defblah"
+    );
 
     testcase!(skip_a, "a", skip(b"a"), Some(b"a".as_ref()), "");
     testcase!(skip_b, "b", skip(b"b"), Some(b"b".as_ref()), "");
@@ -609,10 +722,70 @@ mod tests {
     testcase!(skip_fail, "a", skip(b"b"), None, "a");
     testcase!(skip_eof, "", skip(b"b"), None, "");
 
+    testcase!(
+        skip_any,
+        "one end",
+        skip_any(["one", "two", "three"]),
+        Some(b"one".as_ref()),
+        "end"
+    );
+    testcase!(
+        skip_any_fail,
+        "one end",
+        skip_any(["two", "three"]),
+        None,
+        "one end"
+    );
+
+    testcase!(
+        skip_any_keyword,
+        "def blah",
+        skip_any_keyword(["class", "def"]),
+        Some(b"def".as_ref()),
+        "blah"
+    );
+    testcase!(
+        skip_any_keyword_fail,
+        "defblah",
+        skip_any_keyword(["class", "def"]),
+        None,
+        "defblah"
+    );
+
     testcase_ok!(expect_a, "a", expect(b"a"), "a", "");
     testcase_ok!(expect_b, "b", expect(b"b"), "b", "");
     testcase_ok!(expect_word, "word", expect(b"word"), "word", "");
     testcase_ok!(expect_trims, "word  \nend", expect(b"word"), "word", "end");
+
+    testcase_ok!(
+        expect_any,
+        "two by four",
+        expect_any(["one", "two"]),
+        "two",
+        "by four"
+    );
+    testcase_err!(
+        expect_any_fail,
+        "two by four",
+        expect_any(["one", "three"]),
+        "two by four",
+        "Error at byte position 0: Expected one of multiple options but got `two` instead"
+    );
+
+    testcase_ok!(
+        expect_any_keyword,
+        "def blah",
+        expect_any_keyword(["class", "def"]),
+        "def",
+        "blah"
+    );
+    testcase_err!(
+        expect_any_keyword_fail,
+        "defblah",
+        expect_any_keyword(["class", "def"]),
+        "defblah",
+        "Error at byte position 0: Expected one of multiple options but got `defblah` instead"
+    );
 
     testcase_ok!(expect_ident_ok, "_var123", expect_ident(), "_var123", "");
     testcase_err!(
