@@ -13,4 +13,4 @@ categories = ["config", "parsing"]
 license = "CC0-1.0"
 
 [dependencies]
-thiserror = "1.0.31"
+thiserror = "1"
