@@ -2,7 +2,7 @@
 name = "sashimi"
 version = "0.2.0"
 authors = ["Vi <violet@hey.com>"]
-edition = "2021"
+edition = "2024"
 description = "Simple, straightforward, zero-copy, general-purpose parsing library. Opinionated by default, with customizable rules."
 
 homepage = "https://github.com/mistodon/sashimi"

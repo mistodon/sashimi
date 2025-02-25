@@ -61,15 +61,12 @@ pub trait ParserRules: Clone {
 
     /// Test whether a byte can be the beginning of an identifier.
     fn is_ident_start_byte(ch: u8) -> bool {
-        ch == b'_' || (b'a'..=b'z').contains(&ch) || (b'A'..=b'Z').contains(&ch)
+        ch == b'_' || ch.is_ascii_alphabetic()
     }
 
     /// Test whether a byte can be within an identifier.
     fn is_ident_byte(ch: u8) -> bool {
-        ch == b'_'
-            || (b'a'..=b'z').contains(&ch)
-            || (b'A'..=b'Z').contains(&ch)
-            || (b'0'..=b'9').contains(&ch)
+        ch == b'_' || ch.is_ascii_alphanumeric()
     }
 }
 
@@ -123,7 +120,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
     /// Start parsing some bytes.
     pub fn new_from_bytes(source: &'a [u8]) -> Self {
         Parser {
-            source: source,
+            source,
             cursor: 0,
             _phantom: std::marker::PhantomData,
         }
@@ -161,6 +158,12 @@ impl<'a, R: ParserRules> Parser<'a, R> {
     #[inline(always)]
     pub fn bytes(&self) -> &'a [u8] {
         self.source
+    }
+
+    /// Returns whether the source is empty.
+    #[inline(always)]
+    pub fn is_empty(&self) -> bool {
+        self.bytes().is_empty()
     }
 
     /// Returns the length of the source.
@@ -245,12 +248,10 @@ impl<'a, R: ParserRules> Parser<'a, R> {
                 if comment_nesting == 0 && (cur == self.len() || self.bytes()[cur] == b'\n') {
                     close_comment = true;
                 }
-            } else {
-                if let Some(comment_start) = R::SINGLE_LINE_COMMENT {
-                    if self.check_from(cur, comment_start).is_some() {
-                        in_comment = true;
-                        cur += comment_start.len() - 1;
-                    }
+            } else if let Some(comment_start) = R::SINGLE_LINE_COMMENT {
+                if self.check_from(cur, comment_start).is_some() {
+                    in_comment = true;
+                    cur += comment_start.len() - 1;
                 }
             }
 
@@ -385,7 +386,7 @@ impl<'a, R: ParserRules> Parser<'a, R> {
     /// Returns the identifier at the cursor, if one exists, without moving the cursor.
     pub fn check_ident(&self) -> Option<&'a [u8]> {
         let candidate = self.check_matching(|ch| R::is_ident_byte(ch));
-        match candidate.len() > 0 && R::is_ident_start_byte(candidate[0]) {
+        match !candidate.is_empty() && R::is_ident_start_byte(candidate[0]) {
             true => Some(candidate),
             false => None,
         }
@@ -611,9 +612,9 @@ impl<'a, R: ParserRules> Parser<'a, R> {
             .unwrap()
             .1;
 
-        self.expect(&[opener])?;
+        self.expect([opener])?;
         self.skip_inside(opener)?;
-        self.expect(&[closer])?;
+        self.expect([closer])?;
         let end = self.cursor();
 
         Ok(&self.bytes()[start..end])
